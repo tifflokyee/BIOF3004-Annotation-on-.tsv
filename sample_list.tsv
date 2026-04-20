@@ -1,0 +1,4 @@
+sample_id	vcf_file	status	panelapp_result	revel_result	alphamissense_result	clinvar_result	gnomad_result	vep_input	vep_output	spliceai_result	final_result	notes
+sample_001	sample_001.vcf.gz	pending						Awaiting VCF input
+sample_002	sample_002.vcf.gz	pending						Awaiting VCF input
+sample_003	sample_003.vcf.gz	pending						Awaiting VCF input
