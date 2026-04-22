@@ -1,11 +1,11 @@
 @echo off
 setlocal
 
-rem Windows launcher for creating the small VCF to run through local SpliceAI on another computer.
+rem Windows launcher for running local SpliceAI and merging scores into a TSV.
 
 set "SCRIPT_DIR=%~dp0"
 set "PROJECT_ROOT=%SCRIPT_DIR%.."
-set "PY_SCRIPT=%SCRIPT_DIR%create_small_vcf_for_vep.py"
+set "PY_SCRIPT=%SCRIPT_DIR%run_local_spliceai.py"
 
 if not exist "%PY_SCRIPT%" (
     echo ERROR: Cannot find "%PY_SCRIPT%".

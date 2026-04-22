@@ -11,7 +11,7 @@ DEFAULT_INPUTS = [
     ROOT / "result" / "variants_with_AlphaMissense_and_ClinVar.tsv",
     ROOT / "result" / "freq_with_PanelApp_columns.tsv",
 ]
-OUTPUT_FILE = ROOT / "small_clinical_variants_for_vep.vcf"
+OUTPUT_FILE = ROOT / "result" / "local_spliceai_input_for_external_run.vcf"
 
 
 PANEL_CATEGORY_VALUES = {
@@ -102,16 +102,17 @@ def create_small_vcf(input_tsv=None, output_file=OUTPUT_FILE):
         vcf_lines.append(f"{chrom}\t{pos}\t.\t{ref}\t{alt}\t.\t.\t.")
 
     output_file = Path(output_file)
+    output_file.parent.mkdir(parents=True, exist_ok=True)
     output_file.write_text("\n".join(vcf_lines) + "\n", encoding="utf-8")
     print(f"Small VCF created: {output_file}")
     print(f"Variants written: {len(vcf_lines) - 2:,}")
-    print("Upload this VCF to the GRCh37 VEP web tool and enable SpliceAI.")
+    print("Use this VCF as the input for local SpliceAI on a newer Windows or Linux computer.")
 
 
 if __name__ == "__main__":
     import argparse
 
-    parser = argparse.ArgumentParser(description="Create a small VCF for VEP + SpliceAI upload.")
+    parser = argparse.ArgumentParser(description="Create a small VCF for local SpliceAI scoring on another computer.")
     parser.add_argument("input_tsv", nargs="?", help="Annotated TSV to filter. Defaults to known local outputs.")
     parser.add_argument("-o", "--output", default=str(OUTPUT_FILE), help="Output VCF path.")
     args = parser.parse_args()

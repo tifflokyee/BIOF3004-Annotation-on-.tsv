@@ -3,22 +3,18 @@ setlocal
 
 rem Stepwise Windows annotation runner.
 rem Usage:
-rem   run_stepwise_annotation.bat input.tsv [vep_output.vcf]
-rem
-rem If the VEP SpliceAI file is omitted or missing, this script stops after
-rem creating the TSV that should be used to build the small VCF for VEP.
+rem   run_stepwise_annotation.bat input.tsv
 
 set "INPUT=%~1"
-set "VEP_SPLICEAI=%~2"
 set "SCRIPT_DIR=%~dp0"
 set "PROJECT_ROOT=%SCRIPT_DIR%.."
 
 if "%INPUT%"=="" (
-    echo Usage: run_stepwise_annotation.bat input.tsv [vep_output.vcf]
+    echo Usage: run_stepwise_annotation.bat input.tsv
     exit /b 1
 )
 
-where python >nul 2>nul
+python --version >nul 2>nul
 if errorlevel 1 (
     echo ERROR: Python was not found on PATH.
     exit /b 1
@@ -52,27 +48,38 @@ echo [5/6] gnomAD
 python "%SCRIPT_DIR%annotate_gnomad_step.py" "result\step4_clinvar.tsv" -o "result\step5_gnomad.tsv"
 if errorlevel 1 goto fail
 
-if "%VEP_SPLICEAI%"=="" goto no_vep
-if not exist "%VEP_SPLICEAI%" goto no_vep
-
 echo.
-echo [6/6] SpliceAI from VEP
-python "%SCRIPT_DIR%annotate_spliceai_step.py" "result\step5_gnomad.tsv" -o "result\step6_final_with_spliceai.tsv" --vep-spliceai "%VEP_SPLICEAI%"
+echo [6/6] Local SpliceAI
+if "%OS%"=="Windows_NT" (
+    ver | find "5.1." >nul
+    if not errorlevel 1 goto spliceai_xp
+)
+call "%SCRIPT_DIR%run_local_spliceai_ucsc.bat" "result\step5_gnomad.tsv" -o "result\step6_final_with_local_spliceai.tsv" --spliceai-vcf "result\local_spliceai_model_output.vcf"
 if errorlevel 1 goto fail
-echo.
-echo Done. Final output: result\step6_final_with_spliceai.tsv
-popd >nul
-exit /b 0
+goto spliceai_done
 
-:no_vep
+:spliceai_xp
+if not exist "result\local_spliceai_model_output.vcf" (
+    echo ERROR: Windows XP cannot run local SpliceAI model inference.
+    echo Expected existing local SpliceAI VCF: result\local_spliceai_model_output.vcf
+    echo Creating VCF to run through local SpliceAI on another computer...
+    python "%SCRIPT_DIR%create_small_vcf_for_vep.py" "result\step5_gnomad.tsv" -o "result\local_spliceai_input_for_external_run.vcf"
+    echo.
+    echo Next:
+    echo   1. Copy result\local_spliceai_input_for_external_run.vcf to Windows 10/11 or Linux.
+    echo   2. Run local SpliceAI there and save the output as local_spliceai_model_output.vcf.
+    echo   3. Copy local_spliceai_model_output.vcf back into this result folder.
+    echo   4. Rerun this automation on Windows XP.
+    popd >nul
+    exit /b 1
+)
+echo Windows XP detected; merging existing local SpliceAI VCF.
+python "%SCRIPT_DIR%annotate_spliceai_step.py" "result\step5_gnomad.tsv" -o "result\step6_final_with_local_spliceai.tsv" --local-spliceai-vcf "result\local_spliceai_model_output.vcf"
+if errorlevel 1 goto fail
+
+:spliceai_done
 echo.
-echo SpliceAI VEP output was not provided or was not found.
-echo Current output before SpliceAI: result\step5_gnomad.tsv
-echo Next:
-echo   1. Run: automation\create_small_vcf_for_vep.bat result\step5_gnomad.tsv -o small_clinical_variants_for_vep.vcf
-echo   2. Upload small_clinical_variants_for_vep.vcf to GRCh37 Ensembl VEP with SpliceAI enabled.
-echo   3. Download the VEP result.
-echo   4. Run: python automation\annotate_spliceai_step.py result\step5_gnomad.tsv -o result\step6_final_with_spliceai.tsv --vep-spliceai downloaded_vep_file.vcf
+echo Done. Final output: result\step6_final_with_local_spliceai.tsv
 popd >nul
 exit /b 0
 

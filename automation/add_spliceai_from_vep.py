@@ -79,6 +79,24 @@ def extract_max_spliceai_from_values(values):
     return round(max(scores), 4) if scores else 0.0
 
 
+def spliceai_info_scores(value, alt):
+    """Parse local SpliceAI CLI INFO values: ALLELE|SYMBOL|DS_AG|DS_AL|DS_DG|DS_DL|..."""
+    scores = []
+    if value is None or pd.isna(value) or str(value).strip() in {"", "."}:
+        return scores
+
+    alt = str(alt).strip().upper()
+    for record in str(value).split(","):
+        parts = record.split("|")
+        if len(parts) < 6:
+            continue
+        allele = parts[0].strip().upper()
+        if allele not in {"", alt}:
+            continue
+        scores.extend(numeric_delta_scores("|".join(parts[2:6])))
+    return scores
+
+
 def add_lookup_score(lookup, key, score):
     if score is None:
         return
@@ -150,6 +168,15 @@ def build_lookup_from_vcf(vep_file):
 
             for alt in alt_list:
                 score_values = list(direct_values)
+                if "SpliceAI" in info:
+                    add_lookup_score(
+                        lookup,
+                        (chrom, pos, ref, alt),
+                        round(max(spliceai_info_scores(info["SpliceAI"], alt)), 4)
+                        if spliceai_info_scores(info["SpliceAI"], alt)
+                        else 0.0,
+                    )
+
                 if "CSQ" in info and csq_splice_indexes:
                     for record in str(info["CSQ"]).split(","):
                         parts = record.split("|")

@@ -1,7 +1,11 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 import argparse
 import gzip
+import os
+import platform
 import re
+import shlex
+import subprocess
 from collections import defaultdict
 from pathlib import Path
 
@@ -638,66 +642,58 @@ def annotate_gnomad(df, annotation_dir):
     return df
 
 
-def annotate_spliceai_from_vep(df, vep_file):
-    vep_file = Path(vep_file)
-    if not vep_file.exists():
-        print(f"VEP SpliceAI output not found at {vep_file}; SpliceAI columns will be filled with '.'.")
-        df["SpliceAI_max"] = "."
-        df["SpliceAI_Impact"] = "."
-        return df
+def run_local_spliceai(input_tsv, output_tsv, spliceai_vcf=None, cache=None, distance=50, mask=0):
+    script = Path(__file__).resolve().parent / "run_local_spliceai_ucsc.py"
+    if spliceai_vcf is None:
+        spliceai_vcf = Path(output_tsv).with_suffix(".local_spliceai.vcf")
 
-    try:
-        from add_spliceai_from_vep import (
-            build_spliceai_lookup,
-            normalize_chrom as normalize_vep_chrom,
-            parse_tsv_ref_alt,
+    if platform.system() == "Windows" and platform.release() == "XP":
+        spliceai_vcf = Path(spliceai_vcf)
+        if spliceai_vcf.exists():
+            from add_spliceai_from_vep import add_spliceai_to_tsv, build_spliceai_lookup
+
+            print(f"Windows XP detected; using existing local SpliceAI VCF: {spliceai_vcf}")
+            lookup = build_spliceai_lookup(spliceai_vcf)
+            add_spliceai_to_tsv(lookup, input_tsv, output_tsv)
+            return
+        raise RuntimeError(
+            "Local SpliceAI model inference cannot run on Windows XP because it requires a modern "
+            "Python/TensorFlow environment. Provide --local-spliceai-vcf with an existing local "
+            "SpliceAI VCF, or run the SpliceAI step on Windows 10/11 or Linux."
         )
-    except ImportError as error:
-        print(f"Could not import add_spliceai_from_vep.py ({error}); SpliceAI columns will be filled with '.'.")
-        df["SpliceAI_max"] = "."
-        df["SpliceAI_Impact"] = "."
-        return df
 
-    print(f"Annotating real SpliceAI scores from VEP output: {vep_file}")
-    lookup = build_spliceai_lookup(vep_file)
+    python_command = os.environ.get("SPLICEAI_PYTHON", "py -3.13")
+    command = shlex.split(python_command) + [
+        str(script),
+        str(input_tsv),
+        "-o",
+        str(output_tsv),
+        "--spliceai-vcf",
+        str(spliceai_vcf),
+        "--distance",
+        str(distance),
+        "--mask",
+        str(mask),
+    ]
+    if cache:
+        command.extend(["--cache", str(cache)])
 
-    def get_score(row):
-        chrom = normalize_vep_chrom(row.get("Chr", ""))
-        pos = str(row.get("Coordinate", row.get("POS", ""))).strip()
-        ref, alt = parse_tsv_ref_alt(row)
-        if not chrom or not pos or not ref or not alt:
-            return pd.NA
-        return lookup.get((chrom, pos, ref, alt), pd.NA)
-
-    df["SpliceAI_max"] = df.apply(get_score, axis=1)
-    df["SpliceAI_Impact"] = df["SpliceAI_max"].apply(
-        lambda score: (
-            "High"
-            if pd.notna(score) and float(score) >= 0.2
-            else "Medium"
-            if pd.notna(score) and float(score) >= 0.05
-            else "Low"
-            if pd.notna(score)
-            else "."
-        )
-    )
-    df["SpliceAI_max"] = df["SpliceAI_max"].apply(lambda score: "." if pd.isna(score) else round(float(score), 4))
-    print(f"SpliceAI matches: {(df['SpliceAI_max'] != '.').sum():,} / {len(df):,}")
-    return df
+    print("Running local SpliceAI model annotation...")
+    print(" ".join(command))
+    subprocess.run(command, check=True)
 
 
 def build_parser():
     parser = argparse.ArgumentParser(
-        description="Automatically annotate a TSV or VCF(.gz/.bgz) using local PanelApp, REVEL, AlphaMissense, ClinVar, gnomAD, and VEP SpliceAI files."
+        description="Automatically annotate a TSV or VCF(.gz/.bgz) using local PanelApp, REVEL, AlphaMissense, ClinVar, gnomAD, and local SpliceAI."
     )
     parser.add_argument("input", help="Input .tsv, .vcf, .vcf.gz, or .vcf.bgz file")
     parser.add_argument("-o", "--output", help="Output TSV path. Default: result/<input>.all_annotations.tsv")
     parser.add_argument("--annotation-dir", default="annotation", help="Directory containing local annotation files")
-    parser.add_argument(
-        "--vep-spliceai",
-        default="VEP_output_file.vcf",
-        help="VEP output file containing SpliceAI annotations. If missing, SpliceAI columns are filled with '.'.",
-    )
+    parser.add_argument("--local-spliceai-vcf", help="Output VCF containing local SpliceAI annotations")
+    parser.add_argument("--local-spliceai-cache", help="JSON cache for fetched hg19 sequence windows")
+    parser.add_argument("--spliceai-distance", type=int, default=50)
+    parser.add_argument("--spliceai-mask", type=int, default=0, choices=[0, 1])
     parser.add_argument("--revel-chunk-size", type=int, default=500000)
     parser.add_argument("--alphamissense-chunk-size", type=int, default=500000)
     parser.add_argument("--skip-panelapp", action="store_true")
@@ -739,11 +735,22 @@ def main():
         df = annotate_clinvar(df, annotation_dir)
     if not args.skip_gnomad:
         df = annotate_gnomad(df, annotation_dir)
-    if not args.skip_spliceai:
-        df = annotate_spliceai_from_vep(df, args.vep_spliceai)
-
-    df.to_csv(output, sep="\t", index=False)
-    print(f"Annotated file saved to: {output}")
+    if args.skip_spliceai:
+        df.to_csv(output, sep="\t", index=False)
+        print(f"Annotated file saved to: {output}")
+    else:
+        pre_spliceai_output = output.with_name(output.stem + ".pre_spliceai.tsv")
+        df.to_csv(pre_spliceai_output, sep="\t", index=False)
+        print(f"Pre-SpliceAI annotations saved to: {pre_spliceai_output}")
+        run_local_spliceai(
+            pre_spliceai_output,
+            output,
+            args.local_spliceai_vcf,
+            args.local_spliceai_cache,
+            args.spliceai_distance,
+            args.spliceai_mask,
+        )
+        print(f"Annotated file saved to: {output}")
 
 
 if __name__ == "__main__":

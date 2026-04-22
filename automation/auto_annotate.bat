@@ -7,6 +7,7 @@ rem It does not download files, request administrator rights, or modify system s
 set "SCRIPT_DIR=%~dp0"
 set "PROJECT_ROOT=%SCRIPT_DIR%.."
 set "PY_SCRIPT=%SCRIPT_DIR%auto_annotate_generated.py"
+set SPLICEAI_PYTHON=python
 
 if not exist "%PY_SCRIPT%" (
     echo ERROR: Cannot find "%PY_SCRIPT%".
