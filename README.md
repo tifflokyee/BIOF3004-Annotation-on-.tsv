@@ -1,68 +1,50 @@
 # BIOF3004 Annotation Pipeline
 
-This repository provides a local annotation pipeline for `.tsv` / `.vcf` variant files.
+This repository provides a **local variant annotation pipeline** for `.tsv` and `.vcf` files from NGS data.
 
-Main script:
+**Supported annotations**
 
-- `automation/auto_annotate_generated.py`
+- PanelApp (Mendeliome, Incidentalome, Paediatric)
+- REVEL
+- AlphaMissense
+- ClinVar
+- gnomAD
+- Local SpliceAI
 
-It supports:
-
-- single-file mode
-- batch mode (`--all-tsv`)
-- HGMD output generation
-- PanelApp / REVEL / AlphaMissense / ClinVar / gnomAD / local SpliceAI annotations
+---
 
 ## Folder Structure
 
- Project layout:
-
 ```text
 CAPNGSETB24 for BIOF/
-├── annotation/
-│   ├── Mendeliome.tsv
-│   ├── Incidentalome.tsv
-│   ├── Additional findings_Paediatric.tsv
-│   ├── revel_with_transcript_ids
-│   ├── AlphaMissense_hg19.tsv.gz
-│   ├── clinvar.vcf.gz
-│   ├── gnomad*.vcf.gz
-│   └── hg19_spliceai_windows_cache.json (auto-created/updated)
+├── input/                    # Recommended: put your .tsv files here
+├── sample/                   # Existing example input folder (also supported)
+├── result/                   # Output files (auto-created)
+├── annotation/               # Reference annotation files
 ├── automation/
-│   └── auto_annotate_generated.py
-├── sample/                  # your input TSV files (example)
-└── result/                  # output files
+│   ├── auto_annotate_generated.py
+│   └── download_gnomad.py
+├── run_annotation_windows.bat
+└── README.md
 ```
 
-You can keep `automation/` and your sample folders separate.  
-Run from the project root and point to inputs with `--input-dir`.
+---
 
-## Files Not Included In GitHub
+## Annotation Files (Important)
 
-Some large annotation data files are intentionally not pushed to GitHub (size/storage reasons).
+Large annotation files are intentionally **not included** in GitHub.
 
-You must download/provide them manually in `annotation/` before running the full pipeline.
+Required files in `annotation/`:
 
-Expected large files:
 
-- `annotation/revel_with_transcript_ids`
-- `annotation/AlphaMissense_hg19.tsv.gz`
-- `annotation/clinvar.vcf.gz`
-- `annotation/gnomad*.vcf.gz` or `annotation/gnomad*.vcf.bgz`
-- `annotation/hg19.fa` (reference FASTA)
+| Required file(s) | How to get |
+| --- | --- |
+| `gnomad*.vcf.bgz` + `.tbi` | `python3 automation/download_gnomad.py --mode legacy_grch37 --output-dir annotation` |
+| `revel_with_transcript_ids` | Download from REVEL source or copy from lab storage |
+| `AlphaMissense_hg19.tsv.gz` | Download from `dm_alphamissense` storage |
+| `clinvar.vcf.gz` | Download from NCBI ClinVar FTP |
+| `hg19.fa` + `hg19.fa.fai` | Download hg19 FASTA from UCSC, then run `samtools faidx annotation/hg19.fa` |
 
-Small PanelApp files are usually included:
-
-- `annotation/Mendeliome.tsv`
-- `annotation/Incidentalome.tsv`
-- `annotation/Additional findings_Paediatric.tsv`
-
-## How To Download / Prepare Annotation Files
-
-Use either method below:
-
-1. **Copy from existing lab/server storage** (fastest if your team already has these files)
-2. **Download from official data sources** and rename/place files to match expected names
 
 Official sources:
 
@@ -70,108 +52,66 @@ Official sources:
 - ClinVar VCF: [NCBI ClinVar FTP](https://ftp.ncbi.nlm.nih.gov/pub/clinvar/)
 - AlphaMissense: [Google Cloud Storage Browser (dm_alphamissense)](https://console.cloud.google.com/storage/browser/dm_alphamissense;tab=objects?pli=1&prefix=&forceOnObjectsSortingFiltering=false)
 - REVEL: [REVEL Scores](https://sites.google.com/site/revelgenomics/downloads)
+- hg19 FASTA: [UCSC hg19 FASTA](https://hgdownload.soe.ucsc.edu/goldenPath/hg19/bigZips/hg19.fa.gz)
 
-After downloading, put files into:
+---
 
-```bash
-annotation/
-```
+## Quick Start
 
-Quick check that required files are present:
-
-```bash
-ls -lh annotation/
-```
-
-Example copy from another location:
-
-```bash
-cp /path/to/storage/revel_with_transcript_ids annotation/
-cp /path/to/storage/AlphaMissense_hg19.tsv.gz annotation/
-cp /path/to/storage/clinvar.vcf.gz annotation/
-cp /path/to/storage/gnomad*.vcf.bgz annotation/
-```
-
-### Download gnomAD via script
-
-This repo includes:
-
-- `automation/download_gnomad.py`
-
-Examples:
-
-- GRCh37/hg19-compatible (recommended for current pipeline):
-
-```bash
-python3 automation/download_gnomad.py --mode legacy_grch37 --output-dir annotation
-```
-
-- Latest joint release (GRCh38), only chromosomes present in a TSV:
-
-```bash
-python3 automation/download_gnomad.py --mode latest_joint --scope matched --input-tsv "sample/your_file.tsv" --output-dir annotation
-```
-
-- Latest joint release (GRCh38), all chr1-22,X,Y:
-
-```bash
-python3 automation/download_gnomad.py --mode latest_joint --scope all --output-dir annotation
-```
-
-If some large files are missing, you can still run partially by skipping those steps:
-
-```bash
---skip-revel --skip-alphamissense --skip-clinvar --skip-gnomad
-```
-
-## Input Requirements
-
-For TSV input, include either:
-
-- `Chr`, `Coordinate`, `ref`, `alt`
-
-or:
-
-- `Chr`, `Coordinate`, `Variant` (for example `C>T` or `C>C/T`)
-
-VCF input is also supported (`.vcf`, `.vcf.gz`, `.vcf.bgz`).
-
-## Environment Setup
-
-Recommended: Python 3.9+ in a conda environment.
+### 1) Environment setup (first time only)
 
 ```bash
 conda create -n biof_annotation python=3.9
 conda activate biof_annotation
-```
 
-Install core dependencies:
-
-```bash
 conda config --add channels defaults
 conda config --add channels conda-forge
 conda config --add channels bioconda
+
 conda install tensorflow-cpu keras
 pip install spliceai --no-deps
 pip install pandas numpy requests pysam pyfaidx
 ```
 
-Notes:
+### 2) Prepare annotation files
 
-- `spliceai`, `tensorflow`/`keras` are required for the local SpliceAI step.
-- If you skip SpliceAI (`--skip-spliceai`), those heavy dependencies are not needed for that run.
+Download gnomAD GRCh37-compatible file:
 
-## How To Run
+```bash
+python3 automation/download_gnomad.py --mode legacy_grch37 --output-dir annotation
+```
 
-Run commands from repository root.
+Download local hg19 FASTA for SpliceAI CLI mode:
 
-### Windows + Anaconda Prompt (recommended)
+```bash
+wget -O annotation/hg19.fa.gz https://hgdownload.soe.ucsc.edu/goldenPath/hg19/bigZips/hg19.fa.gz
+gunzip -f annotation/hg19.fa.gz
+samtools faidx annotation/hg19.fa
+```
+
+### 3) Run the pipeline
+
+All TSV files in a folder:
+
+```bash
+python3 automation/auto_annotate_generated.py --all-tsv --input-dir "sample"
+```
+
+Single file:
+
+```bash
+python3 automation/auto_annotate_generated.py "sample/your_file.tsv"
+```
+
+---
+
+## Windows (Anaconda Prompt)
 
 1. Open **Anaconda Prompt**
 2. Go to repository root:
 
 ```bat
-cd "C:\path\to\CAPNGSETB24 for BIOF"
+cd /d "C:\path\to\CAPNGSETB24 for BIOF"
 ```
 
 1. Run launcher:
@@ -180,52 +120,19 @@ cd "C:\path\to\CAPNGSETB24 for BIOF"
 run_annotation_windows.bat
 ```
 
-1. At prompt `Enter input directory containing TSV files [default: sample]:`
-  type your folder name (example: `dragon`) or press Enter for `sample`.
-
-### 1) Batch mode (all TSV files in a folder)
-
-```bash
-python3 automation/auto_annotate_generated.py --all-tsv --input-dir "sample"
-```
-
-### 2) Single file mode
-
-```bash
-python3 automation/auto_annotate_generated.py "sample/your_file.tsv"
-```
-
-### 3) Windows `.bat` launcher
-
-Use:
-
-```bat
-run_annotation_windows.bat
-```
-
-When prompted:
+1. At prompt:
 
 `Enter input directory containing TSV files [default: sample]:`
 
-type your folder name (for example `dragon`) if that folder contains your `.tsv` files, then press Enter.
+Type your folder name (example: `dragon`) or press Enter for `sample`.
 
-The launcher will run:
+---
 
-`python automation\auto_annotate_generated.py --all-tsv --input-dir "<your_folder>" --skip-gnomad`
-
-## SpliceAI Plans (2 Modes)
+## SpliceAI (2 Plans)
 
 ### Plan A (recommended): CLI mode with local FASTA
 
-Use this for a stable environment and no UCSC dependency.
-
-Requirements:
-
-- local GRCh37/hg19 FASTA file (for example `annotation/hg19.fa`)
-- `spliceai` CLI available in environment
-- SpliceAI runtime dependencies installed (`pysam`, `pyfaidx`)
-
-Example:
+Use this for stable, local reference-based execution.
 
 ```bash
 python3 automation/auto_annotate_generated.py --all-tsv --input-dir "sample" \
@@ -233,34 +140,9 @@ python3 automation/auto_annotate_generated.py --all-tsv --input-dir "sample" \
   --local-spliceai-reference "annotation/hg19.fa"
 ```
 
-If your FASTA is downloaded as `annotation/hg19.fa.gz`, unpack first:
-
-```bash
-gunzip -f annotation/hg19.fa.gz
-```
-
-Create FASTA index (recommended for tools that require it):
-
-```bash
-samtools faidx annotation/hg19.fa
-```
-
-This creates:
-
-- `annotation/hg19.fa.fai`
-
 ### Plan B: UCSC mode (no local FASTA argument)
 
-If `--local-spliceai-reference` is not provided, pipeline uses UCSC runner mode.
-This mode fetches sequence windows from UCSC and depends more on local TensorFlow/Keras compatibility.
-
-Install dependencies:
-
-```bash
-pip install "tensorflow==2.16.1" "keras==3.0.5" "numpy<2" pandas requests spliceai pyfaidx pysam
-```
-
-Example:
+If `--local-spliceai-reference` is omitted, pipeline uses UCSC runner mode.
 
 ```bash
 python3 automation/auto_annotate_generated.py --all-tsv --input-dir "sample" \
@@ -274,20 +156,23 @@ python3 automation/auto_annotate_generated.py --all-tsv --input-dir "sample" \
   --skip-hgmd --skip-panelapp --skip-revel --skip-alphamissense --skip-clinvar --skip-gnomad
 ```
 
+---
+
 ## Outputs
 
-For each input file `<name>.tsv`, the pipeline now generates 2 outputs:
+For each input file `<name>.tsv`, pipeline generates:
 
 1. Main annotated table:
   - `result/<name>.tsv`
 2. Separate HGMD upload file:
   - `result/<name>_hgmd.txt`
 
-The separate HGMD file is written early (after HGMD step), so you can upload it to the HGMD website while the remaining annotation steps are still running.
+`HGMD_input` is also included as the first column in main output.  
+The separate HGMD file is written early, so you can upload to HGMD while the remaining steps continue.
+
+---
 
 ## Optional Flags
-
-Skip individual steps if needed:
 
 ```bash
 --skip-hgmd
@@ -299,34 +184,25 @@ Skip individual steps if needed:
 --skip-spliceai
 ```
 
-Useful performance options:
+Batch mode:
 
 ```bash
---revel-chunk-size 500000
---alphamissense-chunk-size 500000
+--all-tsv --input-dir input
 ```
 
-SpliceAI options:
-
-```bash
---spliceai-distance 50
---spliceai-mask 0
---local-spliceai-cache "annotation/hg19_spliceai_windows_cache.json"
-```
-
-## Example
-
-Process all TSV files in `sample/` and skip gnomAD:
-
-```bash
-python3 automation/auto_annotate_generated.py --all-tsv --input-dir "sample" --skip-gnomad
-```
+---
 
 ## Troubleshooting
 
+- `FileNotFoundError: SPLICEAI_REFERENCE does not exist`
+  - Check `--local-spliceai-reference` path.
+  - If you only have `annotation/hg19.fa.gz`, decompress to `annotation/hg19.fa`.
+- `SpliceAI executable was not found on PATH: spliceai`
+  - Activate correct conda environment and verify with `which spliceai`.
+- `ModuleNotFoundError: No module named 'pysam'`
+  - Install missing runtime dependencies: `pip install pysam pyfaidx`.
 - Very slow REVEL step
-  - This is expected on large files; tune chunk size or run on a stronger machine.
+  - Expected for large files; use stronger machine or adjust chunk sizes.
 - No output file generated
-  - Confirm input folder path and TSV files exist.
-  - Ensure you run command from repo root.
+  - Confirm input path and run from repository root.
 
