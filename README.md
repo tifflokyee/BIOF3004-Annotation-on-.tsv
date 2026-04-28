@@ -29,7 +29,29 @@ CAPNGSETB24 for BIOF/
 
 ---
 
-## Annotation Files (Important)
+## Files Not Included in GitHub
+
+Some large annotation data files are intentionally not pushed to GitHub (size/storage reasons).
+
+You must download/provide them manually in `annotation/` before running the full pipeline.
+
+Expected large files:
+
+- `annotation/revel_with_transcript_ids`
+- `annotation/AlphaMissense_hg19.tsv.gz`
+- `annotation/clinvar.vcf.gz`
+- `annotation/gnomad*.vcf.gz` or `annotation/gnomad*.vcf.bgz`
+- `annotation/hg19.fa` (reference FASTA)
+
+Small PanelApp files are usually included:
+
+- `annotation/Mendeliome.tsv`
+- `annotation/Incidentalome.tsv`
+- `annotation/Additional findings_Paediatric.tsv`
+
+---
+
+## How To Download Annotation Files 
 
 Large annotation files are intentionally **not included** in GitHub.
 
@@ -93,13 +115,13 @@ samtools faidx annotation/hg19.fa
 All TSV files in a folder:
 
 ```bash
-python3 automation/auto_annotate_generated.py --all-tsv --input-dir "sample" --local-spliceai-reference "annotation\hg19.fa"
+python3 automation/auto_annotate_generated.py --all-tsv --input-dir "sample" --local-spliceai-reference "annotation/hg19.fa"
 ```
 
 Single file:
 
 ```bash
-python3 automation/auto_annotate_generated.py "sample/your_file.tsv" --local-spliceai-reference "annotation\hg19.fa"
+python3 automation/auto_annotate_generated.py "sample/your_file.tsv" --local-spliceai-reference "annotation/hg19.fa"
 ```
 
 ---
