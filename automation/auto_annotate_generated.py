@@ -568,21 +568,37 @@ def annotate_clinvar(df, annotation_dir):
     if clinvar_df.empty:
         clinvar_df = pd.DataFrame(columns=["Gene", "Chr", "Coordinate", "ref", "alt", *CLINVAR_COLUMNS])
 
-    merge_rows = []
-    for _, row in df.iterrows():
+    clinvar_map = {}
+    for _, row in clinvar_df.iterrows():
+        key = (row["Gene"], row["Chr"], row["Coordinate"], row["ref"], row["alt"])
+        clinvar_map[key] = {column: row.get(column, ".") for column in CLINVAR_COLUMNS}
+
+    def collect_clinvar_for_row(row):
         genes = [gene.strip().upper() for gene in re.split(r"[,;|]", str(row["Gene"])) if gene.strip()]
         if not genes:
             genes = [str(row["Gene"]).strip().upper()]
-        for gene in genes:
-            new_row = row.copy()
-            new_row["Gene"] = gene
-            merge_rows.append(new_row)
-    expanded = pd.DataFrame(merge_rows)
-    expanded = expanded.merge(clinvar_df, on=["Gene", "Chr", "Coordinate", "ref", "alt"], how="left")
+        merged = {}
+        for column in CLINVAR_COLUMNS:
+            values = []
+            seen = set()
+            for gene in genes:
+                key = (gene, row["Chr"], row["Coordinate"], row["ref"], row["alt"])
+                record = clinvar_map.get(key)
+                if not record:
+                    continue
+                value = clean_text(record.get(column))
+                if value == "." or value in seen:
+                    continue
+                values.append(value)
+                seen.add(value)
+            merged[column] = " | ".join(values) if values else "."
+        return pd.Series(merged)
+
+    clinvar_values = df.apply(collect_clinvar_for_row, axis=1)
     for column in CLINVAR_COLUMNS:
-        expanded[column] = expanded[column].fillna(".")
-    print(f"ClinVar matches: {(expanded['clinvar_vcf_id'] != '.').sum():,} / {len(expanded):,}")
-    return expanded
+        df[column] = clinvar_values[column].fillna(".")
+    print(f"ClinVar matches: {(df['clinvar_vcf_id'] != '.').sum():,} / {len(df):,}")
+    return df
 
 
 def gnomad_info_value(info, info_key, allele_index, alt_count, source_name, info_text, filt):
@@ -801,6 +817,15 @@ def fill_missing_annotation_values(df):
     return df
 
 
+def preserve_original_tsv_columns(original_df, annotated_df):
+    final_df = original_df.copy()
+    for column in annotated_df.columns:
+        if column in final_df.columns or column == "HGMD_input":
+            continue
+        final_df[column] = annotated_df[column]
+    return final_df
+
+
 def write_hgmd_output(df, output_tsv_path):
     if "HGMD_input" not in df.columns:
         return
@@ -832,6 +857,10 @@ def annotate_one_file(input_path, args):
     annotation_dir = Path(args.annotation_dir)
 
     print(f"Loading input: {input_path}")
+    input_path = Path(input_path)
+    original_tsv_df = None
+    if input_path.name.lower().endswith(".tsv") or input_path.name.lower().endswith(".tsv.gz"):
+        original_tsv_df = pd.read_csv(input_path, sep="\t", low_memory=False)
     df = load_variant_table(input_path)
     print(f"Variants loaded: {len(df):,}")
 
@@ -848,8 +877,14 @@ def annotate_one_file(input_path, args):
         df = annotate_clinvar(df, annotation_dir)
     if not args.skip_gnomad:
         df = annotate_gnomad(df, annotation_dir)
-    df = reorder_output_columns(df)
     df = fill_missing_annotation_values(df)
+    if original_tsv_df is not None and len(original_tsv_df) == len(df):
+        df = preserve_original_tsv_columns(original_tsv_df, df)
+    elif original_tsv_df is not None and len(original_tsv_df) != len(df):
+        print(
+            "Warning: row count changed during annotation; preserving full annotated table instead of strict original TSV shape."
+        )
+    df = df.drop(columns=["HGMD_input"], errors="ignore")
     if args.skip_spliceai:
         df.to_csv(output, sep="\t", index=False)
         print(f"Annotated file saved to: {output}")
