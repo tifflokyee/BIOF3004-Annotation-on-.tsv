@@ -795,7 +795,8 @@ def default_output_path(input_path):
         if name.lower().endswith(suffix):
             name = name[: -len(suffix)]
             break
-    return Path("result") / f"{name}.tsv"
+    sample_dir = Path("result") / name
+    return sample_dir / f"{name}.tsv"
 
 
 def reorder_output_columns(df):
