@@ -87,9 +87,7 @@ conda config --add channels defaults
 conda config --add channels conda-forge
 conda config --add channels bioconda
 
-conda install tensorflow-cpu keras
-pip install spliceai --no-deps
-pip install pandas numpy requests pysam pyfaidx
+pip install "tensorflow==2.16.1" "keras==3.0.5" "numpy<2" pandas requests pysam pyfaidx spliceai
 ```
 
 ### 2) Prepare annotation files
