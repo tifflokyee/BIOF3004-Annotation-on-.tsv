@@ -17,8 +17,7 @@ This repository provides a **local variant annotation pipeline** for `.tsv` and 
 
 ```text
 CAPNGSETB24 for BIOF/
-├── input/                    # Recommended: put your .tsv files here
-├── sample/                   # Existing example input folder (also supported)
+├── sample/                   # Input folder (example) 
 ├── result/                   # Output files (auto-created)
 ├── annotation/               # Reference annotation files
 ├── automation/
@@ -37,13 +36,13 @@ Large annotation files are intentionally **not included** in GitHub.
 Required files in `annotation/`:
 
 
-| Required file(s) | How to get |
-| --- | --- |
-| `gnomad*.vcf.bgz` + `.tbi` | `python3 automation/download_gnomad.py --mode legacy_grch37 --output-dir annotation` |
-| `revel_with_transcript_ids` | Download from REVEL source or copy from lab storage |
-| `AlphaMissense_hg19.tsv.gz` | Download from `dm_alphamissense` storage |
-| `clinvar.vcf.gz` | Download from NCBI ClinVar FTP |
-| `hg19.fa` + `hg19.fa.fai` | Download hg19 FASTA from UCSC, then run `samtools faidx annotation/hg19.fa` |
+| Required file(s)            | How to get                                                                           |
+| --------------------------- | ------------------------------------------------------------------------------------ |
+| `gnomad*.vcf.bgz` + `.tbi`  | `python3 automation/download_gnomad.py --mode legacy_grch37 --output-dir annotation` |
+| `revel_with_transcript_ids` | Download from REVEL source or copy from lab storage                                  |
+| `AlphaMissense_hg19.tsv.gz` | Download from `dm_alphamissense` storage                                             |
+| `clinvar.vcf.gz`            | Download from NCBI ClinVar FTP                                                       |
+| `hg19.fa` + `hg19.fa.fai`   | Download hg19 FASTA from UCSC, then run `samtools faidx annotation/hg19.fa`          |
 
 
 Official sources:
@@ -94,13 +93,13 @@ samtools faidx annotation/hg19.fa
 All TSV files in a folder:
 
 ```bash
-python3 automation/auto_annotate_generated.py --all-tsv --input-dir "sample"
+python3 automation/auto_annotate_generated.py --all-tsv --input-dir "sample" --local-spliceai-reference "annotation\hg19.fa"
 ```
 
 Single file:
 
 ```bash
-python3 automation/auto_annotate_generated.py "sample/your_file.tsv"
+python3 automation/auto_annotate_generated.py "sample/your_file.tsv" --local-spliceai-reference "annotation\hg19.fa"
 ```
 
 ---
@@ -135,9 +134,7 @@ Type your folder name (example: `dragon`) or press Enter for `sample`.
 Use this for stable, local reference-based execution.
 
 ```bash
-python3 automation/auto_annotate_generated.py --all-tsv --input-dir "sample" \
-  --skip-hgmd --skip-panelapp --skip-revel --skip-alphamissense --skip-clinvar --skip-gnomad \
-  --local-spliceai-reference "annotation/hg19.fa"
+python3 automation/auto_annotate_generated.py --all-tsv --input-dir "sample" --local-spliceai-reference "annotation/hg19.fa"
 ```
 
 ### Plan B: UCSC mode (no local FASTA argument)
@@ -145,15 +142,7 @@ python3 automation/auto_annotate_generated.py --all-tsv --input-dir "sample" \
 If `--local-spliceai-reference` is omitted, pipeline uses UCSC runner mode.
 
 ```bash
-python3 automation/auto_annotate_generated.py --all-tsv --input-dir "sample" \
-  --skip-hgmd --skip-panelapp --skip-revel --skip-alphamissense --skip-clinvar --skip-gnomad
-```
-
-### SpliceAI-only quick run
-
-```bash
-python3 automation/auto_annotate_generated.py --all-tsv --input-dir "sample" \
-  --skip-hgmd --skip-panelapp --skip-revel --skip-alphamissense --skip-clinvar --skip-gnomad
+python3 automation/auto_annotate_generated.py --all-tsv --input-dir "sample"
 ```
 
 ---
