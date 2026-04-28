@@ -148,9 +148,11 @@ For each input file `<name>.tsv`, pipeline generates:
   - `result/<name>.tsv`
 2. Separate HGMD upload file:
   - `result/<name>_hgmd.txt`
+3. Local SpliceAI VCF output:
+  - `result/<name>.local_spliceai.vcf`
 
-`HGMD_input` is also included as the first column in main output.  
 The separate HGMD file is written early, so you can upload to HGMD while the remaining steps continue.
+SpliceAI outcomes are also added to the main annotated table (`result/<name>.tsv`) in the SpliceAI columns.
 
 ---
 
