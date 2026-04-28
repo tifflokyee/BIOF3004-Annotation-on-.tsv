@@ -49,6 +49,7 @@ Expected large files:
 - `annotation/AlphaMissense_hg19.tsv.gz`
 - `annotation/clinvar.vcf.gz`
 - `annotation/gnomad*.vcf.gz` or `annotation/gnomad*.vcf.bgz`
+- `annotation/hg19.fa` (reference FASTA)
 
 Small PanelApp files are usually included:
 
@@ -152,8 +153,7 @@ conda config --add channels conda-forge
 conda config --add channels bioconda
 conda install tensorflow-cpu keras
 pip install spliceai --no-deps
-pip install pandas numpy requests
-pip install pysam pyfaidx
+pip install pandas numpy requests pysam pyfaidx
 ```
 
 Notes:
@@ -171,17 +171,17 @@ Run commands from repository root.
 2. Go to repository root:
 
 ```bat
-cd /d "C:\path\to\CAPNGSETB24 for BIOF"
+cd "C:\path\to\CAPNGSETB24 for BIOF"
 ```
 
-3. Run launcher:
+1. Run launcher:
 
 ```bat
 run_annotation_windows.bat
 ```
 
-4. At prompt `Enter input directory containing TSV files [default: sample]:`
-   type your folder name (example: `dragon`) or press Enter for `sample`.
+1. At prompt `Enter input directory containing TSV files [default: sample]:`
+  type your folder name (example: `dragon`) or press Enter for `sample`.
 
 ### 1) Batch mode (all TSV files in a folder)
 
@@ -238,6 +238,16 @@ If your FASTA is downloaded as `annotation/hg19.fa.gz`, unpack first:
 ```bash
 gunzip -f annotation/hg19.fa.gz
 ```
+
+Create FASTA index (recommended for tools that require it):
+
+```bash
+samtools faidx annotation/hg19.fa
+```
+
+This creates:
+
+- `annotation/hg19.fa.fai`
 
 ### Plan B: UCSC mode (no local FASTA argument)
 
@@ -314,13 +324,6 @@ python3 automation/auto_annotate_generated.py --all-tsv --input-dir "sample" --s
 
 ## Troubleshooting
 
-- `FileNotFoundError: SPLICEAI_REFERENCE does not exist`
-  - Check the path passed to `--local-spliceai-reference`.
-  - If you only have `annotation/hg19.fa.gz`, decompress it to `annotation/hg19.fa`.
-- `SpliceAI executable was not found on PATH: spliceai`
-  - Activate the correct conda environment and verify with `which spliceai`.
-- `ModuleNotFoundError: No module named 'pysam'`
-  - Install missing SpliceAI runtime dependencies: `pip install pysam pyfaidx`.
 - Very slow REVEL step
   - This is expected on large files; tune chunk size or run on a stronger machine.
 - No output file generated
