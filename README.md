@@ -51,7 +51,7 @@ Small PanelApp files are usually included:
 
 ---
 
-## How To Download Annotation Files 
+## How To Download Annotation Files
 
 Large annotation files are intentionally **not included** in GitHub.
 
@@ -127,6 +127,19 @@ python3 automation/auto_annotate_generated.py "sample/your_file.tsv" --local-spl
 ---
 
 ## Windows (Anaconda Prompt)
+
+Default launcher behavior (`run_annotation_windows.bat`):
+
+- Activates conda environment: `biof_annotation`
+- Uses local SpliceAI FASTA path: `annotation\hg19.fa` (must exist)
+- Runs in **batch format** (`--all-tsv`) on the selected input directory
+- Includes by default:
+  - `--all-tsv`
+  - `--input-dir "<your_folder>"`
+  - `--skip-gnomad`
+  - `--local-spliceai-reference "annotation\hg19.fa"`
+
+
 
 1. Open **Anaconda Prompt**
 2. Go to repository root:
