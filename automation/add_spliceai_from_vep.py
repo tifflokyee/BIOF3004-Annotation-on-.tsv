@@ -10,6 +10,12 @@ ROOT = Path(__file__).resolve().parent.parent
 MAX_COL = "SpliceAI_max"
 IMPACT_COL = "SpliceAI_Impact"
 DELTA_SCORE_NAMES = ("DS_AG", "DS_AL", "DS_DG", "DS_DL")
+DELTA_LABELS = {
+    "DS_AL": "Acceptor Loss",
+    "DS_DL": "Donor Loss",
+    "DS_AG": "Acceptor Gain",
+    "DS_DG": "Donor Gain",
+}
 SPLICEAI_DELTA_SCORE_NAMES = (
     "SpliceAI_pred_DS_AG",
     "SpliceAI_pred_DS_AL",
@@ -79,6 +85,21 @@ def extract_max_spliceai_from_values(values):
     return round(max(scores), 4) if scores else 0.0
 
 
+def max_delta_score(value):
+    scores = numeric_delta_scores(value)
+    return round(max(scores), 4) if scores else None
+
+
+def merge_delta_dict(base, incoming):
+    for key in DELTA_SCORE_NAMES:
+        value = incoming.get(key)
+        if value is None:
+            continue
+        current = base.get(key)
+        if current is None or value > current:
+            base[key] = value
+
+
 def spliceai_info_scores(value, alt):
     """Parse local SpliceAI CLI INFO values: ALLELE|SYMBOL|DS_AG|DS_AL|DS_DG|DS_DL|..."""
     scores = []
@@ -97,12 +118,43 @@ def spliceai_info_scores(value, alt):
     return scores
 
 
+def spliceai_info_delta_dict(value, alt):
+    values = {name: None for name in DELTA_SCORE_NAMES}
+    if value is None or pd.isna(value) or str(value).strip() in {"", "."}:
+        return values
+
+    alt = str(alt).strip().upper()
+    for record in str(value).split(","):
+        parts = record.split("|")
+        if len(parts) < 6:
+            continue
+        allele = parts[0].strip().upper()
+        if allele not in {"", alt}:
+            continue
+        record_values = {
+            "DS_AG": max_delta_score(parts[2]),
+            "DS_AL": max_delta_score(parts[3]),
+            "DS_DG": max_delta_score(parts[4]),
+            "DS_DL": max_delta_score(parts[5]),
+        }
+        merge_delta_dict(values, record_values)
+    return values
+
+
 def add_lookup_score(lookup, key, score):
     if score is None:
         return
     current = lookup.get(key)
     if current is None or score > current:
         lookup[key] = score
+
+
+def add_lookup_deltas(lookup, key, deltas):
+    current = lookup.get(key)
+    if current is None:
+        current = {name: None for name in DELTA_SCORE_NAMES}
+    merge_delta_dict(current, deltas)
+    lookup[key] = current
 
 
 def build_lookup_from_table(vep_file):
@@ -131,8 +183,17 @@ def build_lookup_from_table(vep_file):
         alt = str(row.get(alt_col, "")).strip().upper()
         if not chrom or not pos or not ref or not alt or pos == ".":
             continue
-        score = extract_max_spliceai_from_values([row[col] for col in splice_cols])
-        add_lookup_score(lookup, (chrom, pos, ref, alt), score)
+        deltas = {name: None for name in DELTA_SCORE_NAMES}
+        for delta_name in DELTA_SCORE_NAMES:
+            candidates = [delta_name, f"SpliceAI_pred_{delta_name}"]
+            value = None
+            for candidate in candidates:
+                if candidate in df.columns:
+                    value = max_delta_score(row.get(candidate))
+                if value is not None:
+                    break
+            deltas[delta_name] = value
+        add_lookup_deltas(lookup, (chrom, pos, ref, alt), deltas)
     return lookup
 
 
@@ -161,21 +222,15 @@ def build_lookup_from_vcf(vep_file):
             info = parse_info(info_text)
             alt_list = [alt.strip().upper() for alt in alts.split(",")]
 
-            direct_values = []
-            for key, value in info.items():
-                if key in SPLICEAI_DELTA_SCORE_NAMES or key.upper() in DELTA_SCORE_NAMES:
-                    direct_values.append(value)
-
             for alt in alt_list:
-                score_values = list(direct_values)
+                deltas = {name: None for name in DELTA_SCORE_NAMES}
+                for delta_name in DELTA_SCORE_NAMES:
+                    if delta_name in info:
+                        deltas[delta_name] = max_delta_score(info[delta_name])
+                    elif f"SpliceAI_pred_{delta_name}" in info:
+                        deltas[delta_name] = max_delta_score(info[f"SpliceAI_pred_{delta_name}"])
                 if "SpliceAI" in info:
-                    add_lookup_score(
-                        lookup,
-                        (chrom, pos, ref, alt),
-                        round(max(spliceai_info_scores(info["SpliceAI"], alt)), 4)
-                        if spliceai_info_scores(info["SpliceAI"], alt)
-                        else 0.0,
-                    )
+                    merge_delta_dict(deltas, spliceai_info_delta_dict(info["SpliceAI"], alt))
 
                 if "CSQ" in info and csq_splice_indexes:
                     for record in str(info["CSQ"]).split(","):
@@ -183,11 +238,18 @@ def build_lookup_from_vcf(vep_file):
                         if parts and parts[0].strip().upper() not in {"", alt}:
                             continue
                         for index in csq_splice_indexes:
-                            if index < len(parts):
-                                score_values.append(parts[index])
+                            if index >= len(parts):
+                                continue
+                            field_name = csq_fields[index].upper()
+                            if field_name in DELTA_SCORE_NAMES:
+                                value = max_delta_score(parts[index])
+                                if value is None:
+                                    continue
+                                current = deltas.get(field_name)
+                                if current is None or value > current:
+                                    deltas[field_name] = value
 
-                score = extract_max_spliceai_from_values(score_values)
-                add_lookup_score(lookup, (chrom, pos, ref, alt), score)
+                add_lookup_deltas(lookup, (chrom, pos, ref, alt), deltas)
 
     return lookup
 
@@ -237,27 +299,46 @@ def add_spliceai_to_tsv(lookup, tsv_path, output_path=None):
     tsv_path = Path(tsv_path)
     df = pd.read_csv(tsv_path, sep="\t", dtype=str, low_memory=False)
 
-    def get_score(row):
+    def get_scores(row):
         chrom = normalize_chrom(row.get("Chr", ""))
         pos = str(row.get("Coordinate", row.get("POS", ""))).strip()
         ref, alt = parse_tsv_ref_alt(row)
         if not chrom or not pos or not ref or not alt:
-            return pd.NA
-        return lookup.get((chrom, pos, ref, alt), pd.NA)
+            return {name: None for name in DELTA_SCORE_NAMES}
+        hit = lookup.get((chrom, pos, ref, alt))
+        if hit is None:
+            return {name: None for name in DELTA_SCORE_NAMES}
+        if isinstance(hit, (int, float)):
+            return {
+                "DS_AG": float(hit),
+                "DS_AL": float(hit),
+                "DS_DG": float(hit),
+                "DS_DL": float(hit),
+            }
+        return {name: hit.get(name) for name in DELTA_SCORE_NAMES}
 
-    df[MAX_COL] = df.apply(get_score, axis=1)
-    df[IMPACT_COL] = df[MAX_COL].apply(
-        lambda score: (
-            "High"
-            if pd.notna(score) and float(score) >= 0.2
-            else "Medium"
-            if pd.notna(score) and float(score) >= 0.05
-            else "Low"
-            if pd.notna(score)
+    score_rows = df.apply(get_scores, axis=1)
+    for delta_name, label in DELTA_LABELS.items():
+        df[label] = score_rows.apply(lambda item: "." if item.get(delta_name) is None else round(float(item[delta_name]), 4))
+
+    df[MAX_COL] = score_rows.apply(
+        lambda item: (
+            round(max(value for value in item.values() if value is not None), 4)
+            if any(value is not None for value in item.values())
             else "."
         )
     )
-    df[MAX_COL] = df[MAX_COL].apply(lambda score: "." if pd.isna(score) else round(float(score), 4))
+    def score_to_impact(score):
+        if score in {None, "."} or pd.isna(score):
+            return "."
+        value = float(score)
+        if value >= 0.2:
+            return "High"
+        if value >= 0.05:
+            return "Medium"
+        return "Low"
+
+    df[IMPACT_COL] = df[MAX_COL].apply(score_to_impact)
 
     if output_path is None:
         output_path = tsv_path.with_name(tsv_path.stem + "_with_real_SpliceAI.tsv")

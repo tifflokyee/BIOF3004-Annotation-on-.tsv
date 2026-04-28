@@ -92,5 +92,3 @@ print(f"Successfully created: {successful} / {len(tsv_files)} files")
 print(f"Output folder: {output_folder.resolve()}")
 
 print("\n✅ All done! You can now upload these *_hgmd.txt files to HGMD.")
-
-input("\nPress Enter to exit...")

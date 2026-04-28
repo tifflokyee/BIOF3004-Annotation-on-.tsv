@@ -1,4 +1,4 @@
-﻿#!/usr/bin/env python3
+#!/usr/bin/env python3
 import argparse
 import gzip
 import os
@@ -6,6 +6,7 @@ import platform
 import re
 import shlex
 import subprocess
+import tempfile
 from collections import defaultdict
 from pathlib import Path
 
@@ -347,6 +348,22 @@ def annotate_panelapp(df, annotation_dir):
     return df
 
 
+def annotate_hgmd(df):
+    print("Step 1: building HGMD_input column.")
+    chr_values = (
+        df["Chr"]
+        .astype("string")
+        .str.strip()
+        .str.replace(r"^chr", "", regex=True, case=False)
+    )
+    coord_values = df["Coordinate"].astype("Int64").astype("string")
+    valid = chr_values.notna() & coord_values.notna()
+    df["HGMD_input"] = "."
+    df.loc[valid, "HGMD_input"] = "chr" + chr_values[valid] + ":" + coord_values[valid]
+    print(f"HGMD_input populated: {(df['HGMD_input'] != '.').sum():,} / {len(df):,}")
+    return df
+
+
 def candidate_variants(df, snv_only=False):
     mask = df["Coordinate"].notna() & df["ref"].notna() & df["alt"].notna()
     if snv_only:
@@ -685,10 +702,12 @@ def run_local_spliceai(input_tsv, output_tsv, spliceai_vcf=None, cache=None, dis
 
 def build_parser():
     parser = argparse.ArgumentParser(
-        description="Automatically annotate a TSV or VCF(.gz/.bgz) using local PanelApp, REVEL, AlphaMissense, ClinVar, gnomAD, and local SpliceAI."
+        description="Automatically annotate a TSV or VCF(.gz/.bgz) using HGMD_input, local PanelApp, REVEL, AlphaMissense, ClinVar, gnomAD, and local SpliceAI."
     )
-    parser.add_argument("input", help="Input .tsv, .vcf, .vcf.gz, or .vcf.bgz file")
-    parser.add_argument("-o", "--output", help="Output TSV path. Default: result/<input>.all_annotations.tsv")
+    parser.add_argument("input", nargs="?", help="Input .tsv, .vcf, .vcf.gz, or .vcf.bgz file")
+    parser.add_argument("-o", "--output", help="Output TSV path. Default: result/<input>.tsv")
+    parser.add_argument("--all-tsv", action="store_true", help="Annotate all .tsv files in --input-dir")
+    parser.add_argument("--input-dir", default=".", help="Folder used with --all-tsv (default: current folder)")
     parser.add_argument("--annotation-dir", default="annotation", help="Directory containing local annotation files")
     parser.add_argument("--local-spliceai-vcf", help="Output VCF containing local SpliceAI annotations")
     parser.add_argument("--local-spliceai-cache", help="JSON cache for fetched hg19 sequence windows")
@@ -697,6 +716,7 @@ def build_parser():
     parser.add_argument("--revel-chunk-size", type=int, default=500000)
     parser.add_argument("--alphamissense-chunk-size", type=int, default=500000)
     parser.add_argument("--skip-panelapp", action="store_true")
+    parser.add_argument("--skip-hgmd", action="store_true")
     parser.add_argument("--skip-revel", action="store_true")
     parser.add_argument("--skip-alphamissense", action="store_true")
     parser.add_argument("--skip-clinvar", action="store_true")
@@ -712,19 +732,43 @@ def default_output_path(input_path):
         if name.lower().endswith(suffix):
             name = name[: -len(suffix)]
             break
-    return Path("result") / f"{name}.all_annotations.tsv"
+    return Path("result") / f"{name}.tsv"
 
 
-def main():
-    args = build_parser().parse_args()
-    annotation_dir = Path(args.annotation_dir)
-    output = Path(args.output) if args.output else default_output_path(args.input)
+def reorder_output_columns(df):
+    if "HGMD_input" not in df.columns:
+        return df
+    ordered = ["HGMD_input"] + [column for column in df.columns if column != "HGMD_input"]
+    return df[ordered]
+
+
+def write_hgmd_output(df, output_tsv_path):
+    if "HGMD_input" not in df.columns:
+        return
+    hgmd_path = Path(output_tsv_path).with_name(f"{Path(output_tsv_path).stem}_hgmd.txt")
+    hgmd_values = df["HGMD_input"].fillna(".").astype(str)
+    hgmd_values.to_csv(
+        hgmd_path,
+        index=False,
+        header=False,
+        sep="\t",
+        lineterminator="\n",
+    )
+    print(f"HGMD file saved to: {hgmd_path}")
+
+
+def annotate_one_file(input_path, args):
+    output = Path(args.output) if args.output else default_output_path(input_path)
     output.parent.mkdir(parents=True, exist_ok=True)
+    annotation_dir = Path(args.annotation_dir)
 
-    print(f"Loading input: {args.input}")
-    df = load_variant_table(args.input)
+    print(f"Loading input: {input_path}")
+    df = load_variant_table(input_path)
     print(f"Variants loaded: {len(df):,}")
 
+    if not args.skip_hgmd:
+        df = annotate_hgmd(df)
+        write_hgmd_output(df, output)
     if not args.skip_panelapp:
         df = annotate_panelapp(df, annotation_dir)
     if not args.skip_revel:
@@ -735,13 +779,23 @@ def main():
         df = annotate_clinvar(df, annotation_dir)
     if not args.skip_gnomad:
         df = annotate_gnomad(df, annotation_dir)
+    df = reorder_output_columns(df)
     if args.skip_spliceai:
         df.to_csv(output, sep="\t", index=False)
         print(f"Annotated file saved to: {output}")
-    else:
-        pre_spliceai_output = output.with_name(output.stem + ".pre_spliceai.tsv")
+        return
+
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        suffix=".tsv",
+        prefix=f".{output.stem}.pre_spliceai.",
+        dir=output.parent,
+        delete=False,
+        encoding="utf-8",
+    ) as temp_handle:
+        pre_spliceai_output = Path(temp_handle.name)
+    try:
         df.to_csv(pre_spliceai_output, sep="\t", index=False)
-        print(f"Pre-SpliceAI annotations saved to: {pre_spliceai_output}")
         run_local_spliceai(
             pre_spliceai_output,
             output,
@@ -750,7 +804,34 @@ def main():
             args.spliceai_distance,
             args.spliceai_mask,
         )
-        print(f"Annotated file saved to: {output}")
+    finally:
+        pre_spliceai_output.unlink(missing_ok=True)
+    print(f"Annotated file saved to: {output}")
+
+
+def main():
+    args = build_parser().parse_args()
+    parser = build_parser()
+    if args.all_tsv:
+        if args.input:
+            parser.error("Do not pass positional input with --all-tsv.")
+        if args.output:
+            parser.error("--output is only valid for single-input mode.")
+        if args.local_spliceai_vcf:
+            parser.error("--local-spliceai-vcf is only valid for single-input mode.")
+        input_dir = Path(args.input_dir)
+        inputs = sorted(path for path in input_dir.glob("*.tsv") if path.is_file())
+        if not inputs:
+            parser.error(f"No .tsv files found in {input_dir}")
+        print(f"Batch mode: found {len(inputs)} TSV file(s) in {input_dir}")
+        for input_path in inputs:
+            print("=" * 80)
+            annotate_one_file(input_path, args)
+        return
+
+    if not args.input:
+        parser.error("Provide an input file or use --all-tsv.")
+    annotate_one_file(args.input, args)
 
 
 if __name__ == "__main__":
