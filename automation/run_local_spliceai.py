@@ -2,6 +2,7 @@ import argparse
 import shlex
 import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 from add_spliceai_from_vep import add_spliceai_to_tsv, build_spliceai_lookup
@@ -70,6 +71,83 @@ def validate_inputs(args):
         )
 
 
+def detect_reference_chrom_style(reference_path):
+    reference_path = Path(reference_path)
+    fai_path = reference_path.with_suffix(reference_path.suffix + ".fai")
+    contigs = set()
+
+    if fai_path.exists():
+        with open(fai_path, "rt", encoding="utf-8", errors="replace") as handle:
+            for line in handle:
+                parts = line.rstrip("\n").split("\t")
+                if parts and parts[0]:
+                    contigs.add(parts[0].strip())
+
+    if not contigs:
+        return None
+
+    has_chr = any(name == "chr1" for name in contigs)
+    has_plain = any(name == "1" for name in contigs)
+    if has_chr and not has_plain:
+        return "chr"
+    if has_plain and not has_chr:
+        return "plain"
+    return None
+
+
+def normalize_chrom_for_reference(chrom, style):
+    chrom = str(chrom).strip()
+    chrom_no_chr = chrom[3:] if chrom.lower().startswith("chr") else chrom
+    if chrom_no_chr == "M":
+        chrom_no_chr = "MT"
+    if chrom_no_chr == "MT" and style == "chr":
+        return "chrM"
+    if style == "chr":
+        return f"chr{chrom_no_chr}"
+    if style == "plain":
+        return "MT" if chrom_no_chr == "M" else chrom_no_chr
+    return chrom
+
+
+def rewrite_vcf_chromosomes(input_vcf, reference_path):
+    style = detect_reference_chrom_style(reference_path)
+    if style is None:
+        return input_vcf, None
+
+    input_vcf = Path(input_vcf)
+    changed = False
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        suffix=".vcf",
+        prefix=f".{input_vcf.stem}.contig_fix.",
+        dir=input_vcf.parent,
+        delete=False,
+        encoding="utf-8",
+    ) as temp_handle:
+        rewritten_vcf = Path(temp_handle.name)
+        with open(input_vcf, "rt", encoding="utf-8", errors="replace") as src:
+            for line in src:
+                if line.startswith("#"):
+                    temp_handle.write(line)
+                    continue
+                fields = line.rstrip("\n").split("\t")
+                if not fields:
+                    temp_handle.write(line)
+                    continue
+                updated = normalize_chrom_for_reference(fields[0], style)
+                if updated != fields[0]:
+                    fields[0] = updated
+                    changed = True
+                temp_handle.write("\t".join(fields) + "\n")
+
+    if not changed:
+        rewritten_vcf.unlink(missing_ok=True)
+        return input_vcf, None
+
+    print(f"Adjusted VCF chromosome naming to match reference style: {style}")
+    return rewritten_vcf, style
+
+
 def main():
     parser = argparse.ArgumentParser(
         description=(
@@ -117,10 +195,19 @@ def main():
     print("Creating VCF for local SpliceAI...")
     create_small_vcf(args.input_tsv, input_vcf)
 
-    command = build_command(args, input_vcf, spliceai_vcf)
+    spliceai_input_vcf, style = rewrite_vcf_chromosomes(input_vcf, args.reference)
+    if style:
+        print(f"Using chromosome style '{style}' from reference index.")
+
+    command = build_command(args, spliceai_input_vcf, spliceai_vcf)
     print("Running local SpliceAI:")
     print(" ".join(str(part) for part in command))
-    subprocess.run(command, cwd=ROOT, check=True)
+    temp_spliceai_input = spliceai_input_vcf if spliceai_input_vcf != input_vcf else None
+    try:
+        subprocess.run(command, cwd=ROOT, check=True)
+    finally:
+        if temp_spliceai_input is not None:
+            temp_spliceai_input.unlink(missing_ok=True)
 
     print("Merging local SpliceAI scores into TSV...")
     lookup = build_spliceai_lookup(spliceai_vcf)

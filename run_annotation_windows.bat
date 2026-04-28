@@ -28,31 +28,8 @@ if errorlevel 1 (
 echo Conda environment activated: biof_annotation
 echo.
 
-:: If no args: ask for input directory, then run with local SpliceAI FASTA and skip gnomAD
-if "%~1"=="" (
-    set "INPUT_DIR=sample"
-    set /p INPUT_DIR=Enter input directory containing TSV files [default: sample]:
-    if "%INPUT_DIR%"=="" set "INPUT_DIR=sample"
-    set "SPLICEAI_REF=annotation\hg19.fa"
-
-    if not exist "%INPUT_DIR%" (
-        echo ERROR: Input directory not found: %INPUT_DIR%
-        pause
-        exit /b 1
-    )
-    if not exist "%SPLICEAI_REF%" (
-        echo ERROR: SpliceAI reference FASTA not found: %SPLICEAI_REF%
-        echo Please place hg19.fa in annotation\ or run with custom arguments.
-        pause
-        exit /b 1
-    )
-
-    echo Running batch mode in "%INPUT_DIR%" ^(skip gnomAD, use local SpliceAI FASTA^)...
-    python automation\auto_annotate_generated.py --all-tsv --input-dir "%INPUT_DIR%" --skip-gnomad --local-spliceai-reference "%SPLICEAI_REF%"
-) else (
-    echo Running with custom arguments (skip gnomAD appended)...
-    python automation\auto_annotate_generated.py %* --skip-gnomad
-)
+echo Running: python3 automation/auto_annotate_generated.py --all-tsv --input-dir "sample" --skip-gnomad
+python3 automation/auto_annotate_generated.py --all-tsv --input-dir "sample" --skip-gnomad
 
 if errorlevel 1 (
     echo.
