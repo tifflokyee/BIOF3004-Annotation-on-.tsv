@@ -6,6 +6,7 @@ import platform
 import re
 import shlex
 import subprocess
+import sys
 import tempfile
 from collections import defaultdict
 from pathlib import Path
@@ -73,6 +74,14 @@ GNOMAD_FIELDS = [
     ("gnomad_source_file", "__SOURCE__"),
     ("gnomad_info", "__INFO__"),
 ]
+
+
+ANNOTATION_OUTPUT_COLUMNS = (
+    ["HGMD_input", "REVEL_score", "am_pathogenicity", "am_class"]
+    + PANEL_COLUMNS
+    + CLINVAR_COLUMNS
+    + [name for name, _ in GNOMAD_FIELDS]
+)
 
 
 def open_text(path):
@@ -660,9 +669,30 @@ def annotate_gnomad(df, annotation_dir):
 
 
 def run_local_spliceai(input_tsv, output_tsv, spliceai_vcf=None, cache=None, distance=50, mask=0):
-    script = Path(__file__).resolve().parent / "run_local_spliceai_ucsc.py"
+    base_dir = Path(__file__).resolve().parent
+    ucsc_script = base_dir / "run_local_spliceai_ucsc.py"
+    cli_script = base_dir / "run_local_spliceai.py"
     if spliceai_vcf is None:
         spliceai_vcf = Path(output_tsv).with_suffix(".local_spliceai.vcf")
+
+    spliceai_reference = os.environ.get("SPLICEAI_REFERENCE", "").strip()
+    spliceai_exe = os.environ.get("SPLICEAI_EXE", "spliceai").strip()
+    spliceai_runner_prefix = os.environ.get("SPLICEAI_RUNNER_PREFIX", "").strip()
+    if spliceai_reference:
+        reference_path = Path(spliceai_reference)
+        if not reference_path.exists():
+            raise FileNotFoundError(f"SPLICEAI_REFERENCE does not exist: {reference_path}")
+        command = [sys.executable, str(cli_script), str(input_tsv), "--reference", str(reference_path), "-o", str(output_tsv)]
+        if spliceai_vcf:
+            command.extend(["--spliceai-vcf", str(spliceai_vcf)])
+        command.extend(["--distance", str(distance), "--mask", str(mask), "--spliceai-exe", spliceai_exe])
+        if spliceai_runner_prefix:
+            command.extend(["--runner-prefix", spliceai_runner_prefix])
+
+        print("Running local SpliceAI CLI annotation...")
+        print(" ".join(command))
+        subprocess.run(command, check=True)
+        return
 
     if platform.system() == "Windows" and platform.release() == "XP":
         spliceai_vcf = Path(spliceai_vcf)
@@ -679,9 +709,16 @@ def run_local_spliceai(input_tsv, output_tsv, spliceai_vcf=None, cache=None, dis
             "SpliceAI VCF, or run the SpliceAI step on Windows 10/11 or Linux."
         )
 
-    python_command = os.environ.get("SPLICEAI_PYTHON", "py -3.13")
-    command = shlex.split(python_command) + [
-        str(script),
+    python_command = os.environ.get("SPLICEAI_PYTHON")
+    if python_command:
+        python_prefix = shlex.split(python_command)
+    elif platform.system() == "Windows":
+        python_prefix = ["py", "-3.13"]
+    else:
+        python_prefix = [sys.executable]
+
+    command = python_prefix + [
+        str(ucsc_script),
         str(input_tsv),
         "-o",
         str(output_tsv),
@@ -711,6 +748,16 @@ def build_parser():
     parser.add_argument("--annotation-dir", default="annotation", help="Directory containing local annotation files")
     parser.add_argument("--local-spliceai-vcf", help="Output VCF containing local SpliceAI annotations")
     parser.add_argument("--local-spliceai-cache", help="JSON cache for fetched hg19 sequence windows")
+    parser.add_argument(
+        "--local-spliceai-reference",
+        help="GRCh37/hg19 FASTA path. If provided, SpliceAI runs in CLI mode (spliceai executable) instead of UCSC/Keras mode.",
+    )
+    parser.add_argument("--local-spliceai-exe", default="spliceai", help="SpliceAI executable for CLI mode")
+    parser.add_argument(
+        "--local-spliceai-runner-prefix",
+        default="",
+        help='Optional command prefix for CLI mode, for example: "conda run -n spliceai"',
+    )
     parser.add_argument("--spliceai-distance", type=int, default=50)
     parser.add_argument("--spliceai-mask", type=int, default=0, choices=[0, 1])
     parser.add_argument("--revel-chunk-size", type=int, default=500000)
@@ -742,6 +789,18 @@ def reorder_output_columns(df):
     return df[ordered]
 
 
+def fill_missing_annotation_values(df):
+    for column in ANNOTATION_OUTPUT_COLUMNS:
+        if column not in df.columns:
+            continue
+        series = df[column]
+        series = series.fillna(".")
+        if pd.api.types.is_string_dtype(series) or series.dtype == object:
+            series = series.astype("string").str.strip().replace("", ".")
+        df[column] = series
+    return df
+
+
 def write_hgmd_output(df, output_tsv_path):
     if "HGMD_input" not in df.columns:
         return
@@ -758,6 +817,16 @@ def write_hgmd_output(df, output_tsv_path):
 
 
 def annotate_one_file(input_path, args):
+    if args.local_spliceai_reference:
+        os.environ["SPLICEAI_REFERENCE"] = str(args.local_spliceai_reference)
+    elif "SPLICEAI_REFERENCE" in os.environ:
+        del os.environ["SPLICEAI_REFERENCE"]
+    os.environ["SPLICEAI_EXE"] = str(args.local_spliceai_exe)
+    if args.local_spliceai_runner_prefix:
+        os.environ["SPLICEAI_RUNNER_PREFIX"] = str(args.local_spliceai_runner_prefix)
+    elif "SPLICEAI_RUNNER_PREFIX" in os.environ:
+        del os.environ["SPLICEAI_RUNNER_PREFIX"]
+
     output = Path(args.output) if args.output else default_output_path(input_path)
     output.parent.mkdir(parents=True, exist_ok=True)
     annotation_dir = Path(args.annotation_dir)
@@ -780,6 +849,7 @@ def annotate_one_file(input_path, args):
     if not args.skip_gnomad:
         df = annotate_gnomad(df, annotation_dir)
     df = reorder_output_columns(df)
+    df = fill_missing_annotation_values(df)
     if args.skip_spliceai:
         df.to_csv(output, sep="\t", index=False)
         print(f"Annotated file saved to: {output}")

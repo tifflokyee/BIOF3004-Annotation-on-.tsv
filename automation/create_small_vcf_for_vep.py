@@ -84,10 +84,7 @@ def create_small_vcf(input_tsv=None, output_file=OUTPUT_FILE):
     print(f"Clinically relevant rows selected: {len(df_relevant):,} / {len(df):,}")
 
     seen = set()
-    vcf_lines = [
-        "##fileformat=VCFv4.2",
-        "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO",
-    ]
+    records = []
 
     for _, row in df_relevant.iterrows():
         chrom = normalize_chrom(row.get("Chr", ""))
@@ -99,13 +96,21 @@ def create_small_vcf(input_tsv=None, output_file=OUTPUT_FILE):
         if key in seen:
             continue
         seen.add(key)
+        records.append((chrom, pos, ref, alt))
+
+    contigs = sorted({chrom for chrom, _, _, _ in records})
+    vcf_lines = ["##fileformat=VCFv4.2"]
+    for contig in contigs:
+        vcf_lines.append(f"##contig=<ID={contig}>")
+    vcf_lines.append("#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO")
+    for chrom, pos, ref, alt in records:
         vcf_lines.append(f"{chrom}\t{pos}\t.\t{ref}\t{alt}\t.\t.\t.")
 
     output_file = Path(output_file)
     output_file.parent.mkdir(parents=True, exist_ok=True)
     output_file.write_text("\n".join(vcf_lines) + "\n", encoding="utf-8")
     print(f"Small VCF created: {output_file}")
-    print(f"Variants written: {len(vcf_lines) - 2:,}")
+    print(f"Variants written: {len(records):,}")
     print("Use this VCF as the input for local SpliceAI on a newer Windows or Linux computer.")
 
 

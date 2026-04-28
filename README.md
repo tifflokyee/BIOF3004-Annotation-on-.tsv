@@ -153,6 +153,7 @@ conda config --add channels bioconda
 conda install tensorflow-cpu keras
 pip install spliceai --no-deps
 pip install pandas numpy requests
+pip install pysam pyfaidx
 ```
 
 Notes:
@@ -164,6 +165,24 @@ Notes:
 
 Run commands from repository root.
 
+### Windows + Anaconda Prompt (recommended)
+
+1. Open **Anaconda Prompt**
+2. Go to repository root:
+
+```bat
+cd /d "C:\path\to\CAPNGSETB24 for BIOF"
+```
+
+3. Run launcher:
+
+```bat
+run_annotation_windows.bat
+```
+
+4. At prompt `Enter input directory containing TSV files [default: sample]:`
+   type your folder name (example: `dragon`) or press Enter for `sample`.
+
 ### 1) Batch mode (all TSV files in a folder)
 
 ```bash
@@ -174,6 +193,75 @@ python3 automation/auto_annotate_generated.py --all-tsv --input-dir "sample"
 
 ```bash
 python3 automation/auto_annotate_generated.py "sample/your_file.tsv"
+```
+
+### 3) Windows `.bat` launcher
+
+Use:
+
+```bat
+run_annotation_windows.bat
+```
+
+When prompted:
+
+`Enter input directory containing TSV files [default: sample]:`
+
+type your folder name (for example `dragon`) if that folder contains your `.tsv` files, then press Enter.
+
+The launcher will run:
+
+`python automation\auto_annotate_generated.py --all-tsv --input-dir "<your_folder>" --skip-gnomad`
+
+## SpliceAI Plans (2 Modes)
+
+### Plan A (recommended): CLI mode with local FASTA
+
+Use this for a stable environment and no UCSC dependency.
+
+Requirements:
+
+- local GRCh37/hg19 FASTA file (for example `annotation/hg19.fa`)
+- `spliceai` CLI available in environment
+- SpliceAI runtime dependencies installed (`pysam`, `pyfaidx`)
+
+Example:
+
+```bash
+python3 automation/auto_annotate_generated.py --all-tsv --input-dir "sample" \
+  --skip-hgmd --skip-panelapp --skip-revel --skip-alphamissense --skip-clinvar --skip-gnomad \
+  --local-spliceai-reference "annotation/hg19.fa"
+```
+
+If your FASTA is downloaded as `annotation/hg19.fa.gz`, unpack first:
+
+```bash
+gunzip -f annotation/hg19.fa.gz
+```
+
+### Plan B: UCSC mode (no local FASTA argument)
+
+If `--local-spliceai-reference` is not provided, pipeline uses UCSC runner mode.
+This mode fetches sequence windows from UCSC and depends more on local TensorFlow/Keras compatibility.
+
+Install dependencies:
+
+```bash
+pip install "tensorflow==2.16.1" "keras==3.0.5" "numpy<2" pandas requests spliceai pyfaidx pysam
+```
+
+Example:
+
+```bash
+python3 automation/auto_annotate_generated.py --all-tsv --input-dir "sample" \
+  --skip-hgmd --skip-panelapp --skip-revel --skip-alphamissense --skip-clinvar --skip-gnomad
+```
+
+### SpliceAI-only quick run
+
+```bash
+python3 automation/auto_annotate_generated.py --all-tsv --input-dir "sample" \
+  --skip-hgmd --skip-panelapp --skip-revel --skip-alphamissense --skip-clinvar --skip-gnomad
 ```
 
 ## Outputs
@@ -226,6 +314,13 @@ python3 automation/auto_annotate_generated.py --all-tsv --input-dir "sample" --s
 
 ## Troubleshooting
 
+- `FileNotFoundError: SPLICEAI_REFERENCE does not exist`
+  - Check the path passed to `--local-spliceai-reference`.
+  - If you only have `annotation/hg19.fa.gz`, decompress it to `annotation/hg19.fa`.
+- `SpliceAI executable was not found on PATH: spliceai`
+  - Activate the correct conda environment and verify with `which spliceai`.
+- `ModuleNotFoundError: No module named 'pysam'`
+  - Install missing SpliceAI runtime dependencies: `pip install pysam pyfaidx`.
 - Very slow REVEL step
   - This is expected on large files; tune chunk size or run on a stronger machine.
 - No output file generated
