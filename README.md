@@ -144,15 +144,18 @@ The launcher runs immediately with the default command above (no prompt for inpu
 
 For each input file `<name>.tsv`, pipeline generates:
 
+All output files for that sample are grouped inside:
+- `result/<name>/`
+
 1. Main annotated table:
-  - `result/<name>.tsv`
+  - `result/<name>/<name>.tsv`
 2. Separate HGMD upload file:
-  - `result/<name>_hgmd.txt`
+  - `result/<name>/<name>_hgmd.txt`
 3. Local SpliceAI VCF output:
-  - `result/<name>.local_spliceai.vcf`
+  - `result/<name>/<name>.local_spliceai.vcf`
 
 The separate HGMD file is written early, so you can upload to HGMD while the remaining steps continue.
-SpliceAI outcomes are also added to the main annotated table (`result/<name>.tsv`) in the SpliceAI columns.
+SpliceAI outcomes are also added to the main annotated table (`result/<name>/<name>.tsv`) in the SpliceAI columns.
 
 ---
 
