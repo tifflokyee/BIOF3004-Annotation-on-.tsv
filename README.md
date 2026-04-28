@@ -147,11 +147,12 @@ conda activate biof_annotation
 Install core dependencies:
 
 ```bash
-conda config –-add channels defaults 
-conda config –-add channels conda-forge 
-conda config –-add channels bioconda 
-conda install tensorflow-cpu keras 
+conda config --add channels defaults
+conda config --add channels conda-forge
+conda config --add channels bioconda
+conda install tensorflow-cpu keras
 pip install spliceai --no-deps
+pip install pandas numpy requests
 ```
 
 Notes:
@@ -225,8 +226,6 @@ python3 automation/auto_annotate_generated.py --all-tsv --input-dir "sample" --s
 
 ## Troubleshooting
 
-- `ModuleNotFoundError: No module named 'pandas'`
-  - Install dependencies in the active environment (`pip install pandas`).
 - Very slow REVEL step
   - This is expected on large files; tune chunk size or run on a stronger machine.
 - No output file generated
