@@ -87,7 +87,7 @@ conda config --add channels defaults
 conda config --add channels conda-forge
 conda config --add channels bioconda
 
-pip install "tensorflow==2.16.1" "keras==3.0.5" "numpy<2" pandas requests pysam pyfaidx spliceai
+pip install "tensorflow==2.16.1" "keras==3.0.5" "numpy<2" pandas requests pyfaidx spliceai
 ```
 
 ### 2) Prepare annotation files
@@ -98,18 +98,26 @@ Download gnomAD GRCh37-compatible file:
 python3 automation/download_gnomad.py --mode legacy_grch37 --output-dir annotation
 ```
 
+Download and prepare hg19 FASTA for SpliceAI CLI mode:
+
+```bash
+wget -O annotation/hg19.fa.gz https://hgdownload.soe.ucsc.edu/goldenPath/hg19/bigZips/hg19.fa.gz
+gunzip -f annotation/hg19.fa.gz
+samtools faidx annotation/hg19.fa
+```
+
 ### 3) Run the pipeline
 
 All TSV files in a folder:
 
 ```bash
-python3 automation/auto_annotate_generated.py --all-tsv --input-dir "sample"
+python3 automation/auto_annotate_generated.py --all-tsv --input-dir "sample" --skip-gnomad --local-spliceai-reference "annotation/hg19.fa"
 ```
 
 Single file:
 
 ```bash
-python3 automation/auto_annotate_generated.py "sample/your_file.tsv"
+python3 automation/auto_annotate_generated.py "sample/your_file.tsv" --skip-gnomad --local-spliceai-reference "annotation/hg19.fa"
 ```
 
 ---
@@ -183,8 +191,8 @@ Batch mode:
 
 - `SpliceAI executable was not found on PATH: spliceai`
   - Activate correct conda environment and verify with `which spliceai`.
-- `ModuleNotFoundError: No module named 'pysam'`
-  - Install missing runtime dependencies: `pip install pysam pyfaidx`.
+- `Reference FASTA not found: annotation/hg19.fa`
+  - Download hg19 FASTA and index it in `annotation/` (`hg19.fa` and `hg19.fa.fai`).
 - Very slow REVEL step
   - Expected for large files; use stronger machine or adjust chunk sizes.
 - No output file generated
