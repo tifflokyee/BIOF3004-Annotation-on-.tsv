@@ -120,31 +120,10 @@ Single file:
 python3 automation/auto_annotate_generated.py "sample/your_file.tsv" --skip-gnomad --local-spliceai-reference "annotation/hg19.fa"
 ```
 
----
-
-## Windows (Anaconda Prompt)
-
-Default launcher behavior (`run_annotation_windows.bat`):
-
-- Activates conda environment: `biof_annotation`
-- Runs in **batch mode** on the `sample` folder
-- Executes this command:
-  - `python3 automation/auto_annotate_generated.py --all-tsv --input-dir "sample" --skip-gnomad`
-
-1. Open **Anaconda Prompt**
-2. Go to repository root:
-
-```bat
-cd /d "C:\path\to\CAPNGSETB24 for BIOF"
+All TSV files in a folder without spliceAI: 
+```bash
+python3 automation/auto_annotate_generated.py --all-tsv --input-dir "sample" --skip-gnomad --skip-spliceai
 ```
-
-1. Run launcher:
-
-```bat
-run_annotation_windows.bat
-```
-
-The launcher runs immediately with the default command above (no prompt for input directory).
 
 ---
 
